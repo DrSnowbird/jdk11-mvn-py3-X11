@@ -28,6 +28,19 @@ COPY scripts ${HOME}/scripts
 COPY bin ${HOME}/bin
 RUN sudo chown -R ${USER}:${USER} ${HOME}/scripts ${HOME}/bin && \
     chmod +x ${HOME}/scripts/*.sh ${HOME}/bin/*.sh
+    
+###########################################
+#### ---- entrypoint script setup ---- ####
+###########################################
+#RUN ln -s ${INSTALL_DIR}/scripts/docker-entrypoint.sh /docker-entrypoint.sh
+#COPY docker-entrypoint.sh /docker-entrypoint.sh
+#RUN chmod +x /docker-entrypoint.sh
+
+#############################################
+#### ---- USER as Owner for scripts ---- ####
+#############################################
+#RUN chown ${USER}:${USER} -R ${INSTALL_DIR}/scripts /docker-entrypoint.sh
+
 
 ############################################
 #### ---- Volumes: data, workspace ---- ####
