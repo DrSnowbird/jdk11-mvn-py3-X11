@@ -1,11 +1,11 @@
 version: '3' 
 services:
-  jdk-mvn-py3-x11:
-    image: openkbs/jdk-mvn-py3-x11
+  jdk11-mvn-py3-x11:
+    image: openkbs/jdk11-mvn-py3-x11
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: jdk-mvn-py3-x11
+    container_name: jdk11-mvn-py3-x11
     environment:
       - USER_ID=${USER_ID:-1000}
       - GROUP_ID=${GROUP_ID:-1000}
@@ -17,7 +17,7 @@ services:
       - "/dev/snd:/dev/snd"
     volumes:
       - /dev/shm:/dev/shm
-      - /etc/host:/etc/host
       - /tmp/.X11-unix:/tmp/.X11-unix
       - ./workspace:/home/developer/workspace
       - ./data:/home/developer/data
+
