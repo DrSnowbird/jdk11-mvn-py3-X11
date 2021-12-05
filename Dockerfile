@@ -94,18 +94,22 @@ ENV unix:runtime=yes
 #=================================
 RUN echo "Set disable_coredump false" | sudo tee -a /etc/sudo.conf
 
+RUN sudo apt install -y dbus-x11
+RUN sudo apt install -y alsa-utils libpulse0 libasound2-plugins 
+
 WORKDIR ${HOME}
 USER ${USER}
 
 #ENTRYPOINT ["/usr/local/docker-entrypoint.sh"]
-#CMD ["/usr/bin/firefox"]
-# CMD ["/usr/bin/google-chrome","--no-sandbox","--disable-gpu", "--disable-extensions"]
+# -- test --
+#CMD xeyes
+CMD ["/usr/bin/firefox"]
+#CMD ["/usr/bin/google-chrome","--no-sandbox","--disable-gpu", "--disable-extensions"]
 #CMD ["/usr/bin/google-chrome"]
 
-CMD ["/usr/bin/google-chrome","--no-sandbox", "https://github.com/DrSnowbird/jdk11-mvn-py3", "https://music.youtube.com/"]
+#CMD ["/usr/bin/google-chrome","--no-sandbox", "https://github.com/DrSnowbird/jdk11-mvn-py3", "https://music.youtube.com/"]
 #CMD ["/usr/bin/google-chrome","--no-sandbox","--disable-gpu", "https://github.com/DrSnowbird/jdk11-mvn-py3"]
 #CMD ["/usr/bin/google-chrome","--no-sandbox","--disable-gpu", "https://www.google.com/"]
 
-# -- test --
-CMD xeyes
+
 

@@ -14,6 +14,53 @@ if [ $# -lt 1 ]; then
     echo "--------------------------------------------------------"
 fi
 
+###################################################
+#### ---- Parse Command Line Arguments:  ---- #####
+###################################################
+IS_TO_RUN_CPU=0
+IS_TO_RUN_GPU=1
+
+PARAMS=""
+while (( "$#" )); do
+  case "$1" in
+    -c|--cpu)
+      IS_TO_RUN_CPU=1
+      IS_TO_RUN_GPU=0
+      GPU_OPTION=
+      shift
+      ;;
+    -g|--gpu)
+      IS_TO_RUN_CPU=0
+      IS_TO_RUN_GPU=1
+      GPU_OPTION=" --gpus all "
+      shift
+      ;;
+    -d)
+      RUN_TYPE=1
+      shift
+      ;;
+    ## -- allowing docker's command options to go through without exiting
+    ## e.g., 
+    #-*|--*=) # unsupported flags
+    #  echo "Error: Unsupported flag $1" >&2
+    #  exit 1
+    #  ;;
+    *) # preserve positional arguments
+      PARAMS="$PARAMS $1"
+      shift
+      ;;
+  esac
+done
+# set positional arguments in their proper place
+eval set -- "$PARAMS"
+
+echo "-c (IS_TO_RUN_CPU): $IS_TO_RUN_CPU"
+echo "-g (IS_TO_RUN_GPU): $IS_TO_RUN_GPU"
+
+echo "remiaing args:"
+
+echo $@
+
 ###########################################################################
 #### ---- RUN Configuration (CHANGE THESE if needed!!!!)           --- ####
 ###########################################################################
@@ -41,11 +88,11 @@ RUN_TYPE=${RUN_TYPE:-0}
 
 ## ------------------------------------------------------------------------
 ## -- Container 'hostname' use: 
-## -- Default= 1 (use HOST_IP)
+## -- Default= 2 (use HOST_IP)
 ## -- 1: HOST_IP
 ## -- 2: HOST_NAME
 ## ------------------------------------------------------------------------
-HOST_USE_IP_OR_NAME=${HOST_USE_IP_OR_NAME:-1}
+HOST_USE_IP_OR_NAME=${HOST_USE_IP_OR_NAME:-2}
 
 ########################################
 #### ---- NVIDIA GPU Checking: ---- ####
@@ -55,7 +102,7 @@ HOST_USE_IP_OR_NAME=${HOST_USE_IP_OR_NAME:-1}
 ##    0: (default) Not using host's USER / GROUP ID
 ##    1: Yes, using host's USER / GROUP ID for Container running.
 ## ------------------------------------------------------------------------ 
-
+GPU_OPTION=
 NVIDIA_DOCKER_AVAILABLE=0
 function check_NVIDIA() {
     NVIDIA_PCI=`lspci | grep VGA | grep -i NVIDIA`
@@ -105,13 +152,18 @@ if [ "$1" = "-a" ] && [ "${RUN_TYPE}" = "1" ] ; then
     shift 1
 fi
 RESTART_OPTION=${RESTART_OPTION:-no}
+#RESTART_OPTION=${RESTART_OPTION:-unless-stopped}
 
 ## ------------------------------------------------------------------------
 ## More optional values:
 ##   Add any additional options here
 ## ------------------------------------------------------------------------
 #MORE_OPTIONS="--privileged=true"
-MORE_OPTIONS=""
+#MORE_OPTIONS=""
+
+## -- IPC Host, Shm
+#MISC_OPTIONS="--ipc=host --shm-size 4g"
+MISC_OPTIONS="--ipc=host "
 
 ## ------------------------------------------------------------------------
 ## Multi-media optional values:
@@ -372,66 +424,68 @@ function generateVolumeMapping() {
         echo ">>>>>>>>> $vol"
         hasColon=`echo $vol|grep ":"`
         ## -- allowing change local volume directories --
-        if [ "$hasColon" != "" ]; then
-            if [ "`echo $vol|grep 'volume-'`" != "" ]; then
-                cutomizedVolume $vol
-            else
-                echo "************* hasColon=$hasColon"
-                left=`echo $vol|cut -d':' -f1`
+        if [ "`echo $vol|grep 'volume-'`" != "" ]; then
+            cutomizedVolume $vol
+        else
+            echo "************* hasColon=$hasColon"
+            left=`echo $vol|cut -d':' -f1`
+            if [ "$hasColon" != "" ]; then
                 right=`echo $vol|cut -d':' -f2`
-                leftHasDot=`echo $left|grep "^\./"`
-                if [ "$leftHasDot" != "" ]; then
-                    ## has "./data" on the left
-                    debug "******** A. Left HAS Dot pattern: leftHasDot=$leftHasDot"
-                    if [[ ${right} == "/"* ]]; then
-                        ## -- pattern like: "./data:/containerPath/data"
-                        echo "******* A-1 -- pattern like ./data:/data --"
-                        VOLUME_MAP="${VOLUME_MAP} -v `pwd`/${left#./}:${right}"
-                    else
-                        ## -- pattern like: "./data:data"
-                        echo "******* A-2 -- pattern like ./data:data --"
-                        VOLUME_MAP="${VOLUME_MAP} -v `pwd`/${left#./}:${DOCKER_VOLUME_DIR}/${right}"
-                    fi
-                    checkHostVolumePath "`pwd`/${left}"
+            else
+                right=$left
+            fi
+            leftHasDot=`echo $left|grep "^\./"`
+            if [ "$leftHasDot" != "" ]; then
+                ## has "./data" on the left
+                debug "******** A. Left HAS Dot pattern: leftHasDot=$leftHasDot"
+                if [[ ${right} == "/"* ]]; then
+                    ## -- pattern like: "./data:/containerPath/data"
+                    echo "******* A-1 -- pattern like ./data:/data --"
+                    VOLUME_MAP="${VOLUME_MAP} -v `pwd`/${left#./}:${right}"
                 else
-                    ## No "./data" on the left
-                    debug "******** B. Left  No ./data on the left: leftHasDot=$leftHasDot"
-                    leftHasAbsPath=`echo $left|grep "^/.*"`
-                    if [ "$leftHasAbsPath" != "" ]; then
-                        debug "******* B-1 ## Has pattern like /data on the left "
-                        if [[ ${right} == "/"* ]]; then
-                            ## -- pattern like: "/data:/containerPath/data"
-                            echo "****** B-1-a pattern like /data:/containerPath/data --"
-                            VOLUME_MAP="${VOLUME_MAP} -v ${left}:${right}"
-                        else
-                            ## -- pattern like: "/data:data"
-                            echo "----- B-1-b pattern like /data:data --"
-                            VOLUME_MAP="${VOLUME_MAP} -v ${left}:${DOCKER_VOLUME_DIR}/${right}"
-                        fi
-                        checkHostVolumePath "${left}"
+                    ## -- pattern like: "./data:data"
+                    echo "******* A-2 -- pattern like ./data:data --"
+                    VOLUME_MAP="${VOLUME_MAP} -v `pwd`/${left#./}:${DOCKER_VOLUME_DIR}/${right}"
+                fi
+                checkHostVolumePath "`pwd`/${left}"
+            else
+                ## No "./data" on the left
+                debug "******** B. Left  No ./data on the left: leftHasDot=$leftHasDot"
+                leftHasAbsPath=`echo $left|grep "^/.*"`
+                if [ "$leftHasAbsPath" != "" ]; then
+                    debug "******* B-1 ## Has pattern like /data on the left "
+                    if [[ ${right} == "/"* ]]; then
+                        ## -- pattern like: "/data:/containerPath/data"
+                        echo "****** B-1-a pattern like /data:/containerPath/data --"
+                        VOLUME_MAP="${VOLUME_MAP} -v ${left}:${right}"
                     else
-                        debug "******* B-2 ## No pattern like /data on the left"
-                        rightHasAbsPath=`echo $right|grep "^/.*"`
-                        debug ">>>>>>>>>>>>> rightHasAbsPath=$rightHasAbsPath"
-                        if [[ ${right} == "/"* ]]; then
-                            echo "****** B-2-a pattern like: data:/containerPath/data"
-                            debug "-- pattern like ./data:/data --"
-                            VOLUME_MAP="${VOLUME_MAP} -v ${LOCAL_VOLUME_DIR}/${left}:${right}"
-                        else
-                            debug "****** B-2-b ## -- pattern like: data:data"
-                            VOLUME_MAP="${VOLUME_MAP} -v ${LOCAL_VOLUME_DIR}/${left}:${DOCKER_VOLUME_DIR}/${right}"
-                        fi
-                        checkHostVolumePath "${left}"
+                        ## -- pattern like: "/data:data"
+                        echo "----- B-1-b pattern like /data:data --"
+                        VOLUME_MAP="${VOLUME_MAP} -v ${left}:${DOCKER_VOLUME_DIR}/${right}"
                     fi
+                    checkHostVolumePath "${left}"
+                else
+                    debug "******* B-2 ## No pattern like /data on the left"
+                    rightHasAbsPath=`echo $right|grep "^/.*"`
+                    debug ">>>>>>>>>>>>> rightHasAbsPath=$rightHasAbsPath"
+                    if [[ ${right} == "/"* ]]; then
+                        echo "****** B-2-a pattern like: data:/containerPath/data"
+                        debug "-- pattern like ./data:/data --"
+                        VOLUME_MAP="${VOLUME_MAP} -v ${LOCAL_VOLUME_DIR}/${left}:${right}"
+                    else
+                        debug "****** B-2-b ## -- pattern like: data:data"
+                        VOLUME_MAP="${VOLUME_MAP} -v ${LOCAL_VOLUME_DIR}/${left}:${DOCKER_VOLUME_DIR}/${right}"
+                    fi
+                    checkHostVolumePath "${left}"
                 fi
             fi
-        else
-            ## -- pattern like: "data"
-            debug "-- default sub-directory (without prefix absolute path) --"
-            VOLUME_MAP="${VOLUME_MAP} -v ${LOCAL_VOLUME_DIR}/$vol:${DOCKER_VOLUME_DIR}/$vol"
-            mkdir -p ${LOCAL_VOLUME_DIR}/$vol
-            if [ $DEBUG -gt 0 ]; then ls -al ${LOCAL_VOLUME_DIR}/$vol; fi
-        fi       
+        fi
+       # else
+       #     ## -- No colon, e.g., /etc/hosts
+       #     ## -- pattern like: "data"
+       #     debug "-- default sub-directory (without prefix absolute path) --"
+       #     VOLUME_MAP="${VOLUME_MAP} -v $vol:$vol"
+       # fi       
         echo ">>> expanded VOLUME_MAP: ${VOLUME_MAP}"
     done
 }
@@ -468,7 +522,7 @@ echo "PORT_MAP=${PORT_MAP}"
 ###################################################
 #### ---- Generate Environment Variables       ----
 ###################################################
-ENV_VARS=""
+ENV_VARS=${ENV_VARS:-" -e HOST_IP=${HOST_IP}" }
 function generateEnvVars_v2() {
     while read line; do
         echo "Line=$line"
@@ -607,12 +661,12 @@ function cleanup() {
 ###################################################
 function displayURL() {
     port=${1}
-    echo "... Go to: http://${MY_IP}:${port}"
-    #firefox http://${MY_IP}:${port} &
+    echo "... Go to: http://${HOST_IP}:${port}"
+    #firefox http://${HOST_IP}:${port} &
     if [ "`which google-chrome`" != "" ]; then
-        /usr/bin/google-chrome http://${MY_IP}:${port} &
+        /usr/bin/google-chrome http://${HOST_IP}:${port} &
     else
-        firefox http://${MY_IP}:${port} &
+        firefox http://${HOST_IP}:${port} &
     fi
 }
 
@@ -704,7 +758,8 @@ function detectMedia() {
                 MEDIA_OPTIONS=" --group-add audio --group-add video "
             fi
             # MEDIA_OPTIONS=" --group-add audio  --group-add video --device /dev/snd --device /dev/dri  "
-            MEDIA_OPTIONS="${MEDIA_OPTIONS} --device $device:$device"
+            #MEDIA_OPTIONS="${MEDIA_OPTIONS} --device $device:$device"
+            MEDIA_OPTIONS="${MEDIA_OPTIONS} --device $device"
         fi
     done
     echo "MEDIA_OPTIONS= ${MEDIA_OPTION}"
@@ -791,11 +846,12 @@ case "${BUILD_TYPE}" in
     0)
         #### 0: (default) has neither X11 nor VNC/noVNC container build image type
         #### ---- for headless-based / GUI-less ---- ####
-        MORE_OPTIONS="${MORE_OPTIONS} ${HOSTS_OPTIONS} "
+        MORE_OPTIONS="${MORE_OPTIONS} ${MISC_OPTIONS} "
         sudo docker run \
             --name=${instanceName} \
             --restart=${RESTART_OPTION} \
-            ${REMOVE_OPTION} ${RUN_OPTION} ${MORE_OPTIONS} ${CERTIFICATE_OPTIONS} \
+            ${GPU_OPTION} \
+            ${REMOVE_OPTION} ${RUN_OPTION} ${HOST_OPTION} ${MORE_OPTIONS} ${CERTIFICATE_OPTIONS} \
             ${privilegedString} \
             ${USER_VARS} \
             ${ENV_VARS} \
@@ -813,12 +869,14 @@ case "${BUILD_TYPE}" in
         #X11_OPTION="-e DISPLAY=$DISPLAY -v /dev/shm:/dev/shm -v /tmp/.X11-unix:/tmp/.X11-unix -e DBUS_SYSTEM_BUS_ADDRESS=unix:path=/var/run/dbus/system_bus_socket"
         X11_OPTION="-e DISPLAY=$DISPLAY -v /dev/shm:/dev/shm -v /tmp/.X11-unix:/tmp/.X11-unix"
         echo "X11_OPTION=${X11_OPTION}"
-        MORE_OPTIONS="${MORE_OPTIONS} ${HOSTS_OPTIONS} "
+        MORE_OPTIONS="${MORE_OPTIONS} ${MISC_OPTIONS} "
         sudo docker run \
             --name=${instanceName} \
             --restart=${RESTART_OPTION} \
+            ${GPU_OPTION} \
             ${MEDIA_OPTIONS} \
-            ${REMOVE_OPTION} ${RUN_OPTION} ${MORE_OPTIONS} ${CERTIFICATE_OPTIONS} \
+	    -v "/run/user/$UID/pulse/native:/var/run/pulseaudio.sock" \
+            ${REMOVE_OPTION} ${RUN_OPTION}  ${HOST_OPTION} ${MORE_OPTIONS} ${CERTIFICATE_OPTIONS} \
             ${X11_OPTION} \
             ${privilegedString} \
             ${USER_VARS} \
@@ -838,11 +896,12 @@ case "${BUILD_TYPE}" in
             VNC_RESOLUTION=1920x1080
             ENV_VARS="${ENV_VARS} -e VNC_RESOLUTION=${VNC_RESOLUTION}" 
         fi
-        MORE_OPTIONS="${MORE_OPTIONS} ${HOSTS_OPTIONS} "
+        MORE_OPTIONS="${MORE_OPTIONS} ${MISC_OPTIONS} "
         sudo docker run \
             --name=${instanceName} \
             --restart=${RESTART_OPTION} \
-            ${REMOVE_OPTION} ${RUN_OPTION} ${MORE_OPTIONS} ${CERTIFICATE_OPTIONS} \
+            ${GPU_OPTION} \
+            ${REMOVE_OPTION} ${RUN_OPTION}  ${HOST_OPTION} ${MORE_OPTIONS} ${CERTIFICATE_OPTIONS} \
             ${privilegedString} \
             ${USER_VARS} \
             ${ENV_VARS} \

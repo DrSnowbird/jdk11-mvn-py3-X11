@@ -11,8 +11,6 @@ services:
       - GROUP_ID=${GROUP_ID:-1000}
       - DISPLAY=${DISPLAY:-:0}
       - DBUS_SYSTEM_BUS_ADDRESS=unix:path=/host/run/dbus/system_bus_socket
-    group_add:
-      - audio
     devices:
       - "/dev/snd:/dev/snd"
     volumes:
